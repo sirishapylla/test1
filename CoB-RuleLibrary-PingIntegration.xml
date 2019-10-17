@@ -1,0 +1,1078 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE Rule PUBLIC 'sailpoint.dtd' 'sailpoint.dtd'>
+<Rule language='beanshell' name='CoB-RuleLibrary-PingIntegration'>
+  <Source><![CDATA[
+  
+  import java.io.BufferedReader;
+  import java.io.IOException;
+  import java.io.InputStream;
+  import java.security.KeyManagementException;
+  import java.security.KeyStoreException;
+  import java.security.NoSuchAlgorithmException;
+  import java.security.cert.CertificateException;
+  import java.security.cert.X509Certificate;
+  import javax.net.ssl.HostnameVerifier;
+  import javax.net.ssl.SSLContext;
+  import org.apache.http.HttpHost;
+  import org.apache.http.HttpResponse;
+  import org.apache.http.HttpEntity;
+  import org.apache.http.client.methods.HttpGet;
+  import org.apache.http.client.methods.HttpPost;
+  import org.apache.http.client.AuthCache;
+  import org.apache.http.client.ClientProtocolException;
+  import org.apache.http.client.HttpClient;
+  import org.apache.http.impl.client.HttpClientBuilder;
+  import org.apache.http.client.CredentialsProvider;
+  import org.apache.http.impl.auth.BasicScheme;
+  import org.apache.http.impl.client.BasicAuthCache;
+  import org.apache.http.impl.client.BasicCredentialsProvider;
+  import org.apache.http.impl.client.CloseableHttpClient;
+  import org.apache.http.auth.UsernamePasswordCredentials;
+  import org.apache.http.client.config.RequestConfig;
+  import org.apache.http.client.config.CookieSpecs;
+  import org.apache.http.auth.AuthScope;
+  import org.apache.http.client.protocol.HttpClientContext;
+  import org.apache.http.client.utils.URIBuilder;
+  import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+  import org.apache.http.conn.ssl.TrustSelfSignedStrategy;
+  import org.apache.http.conn.ssl.TrustStrategy;
+  import org.apache.http.util.EntityUtils;
+  import org.apache.http.client.utils.HttpClientUtils;
+  import org.apache.http.entity.StringEntity;
+  import org.apache.http.conn.ssl.SSLContextBuilder;
+  import org.apache.http.impl.client.HttpClients;
+  
+  import java.nio.charset.StandardCharsets;
+  import java.text.SimpleDateFormat;
+  import javax.crypto.Mac;
+  import javax.crypto.spec.SecretKeySpec;
+  import org.apache.commons.codec.binary.Base64;
+  
+  import org.json.simple.JSONObject;
+  import org.json.simple.parser.JSONParser;
+  import org.json.JSONException;
+  
+  import sailpoint.object.Filter;
+  import sailpoint.object.QueryOptions;
+  import sailpoint.object.Identity;
+  import sailpoint.object.ProvisioningPlan;
+  import sailpoint.object.ProvisioningPlan.AccountRequest;
+  import sailpoint.object.ProvisioningPlan.AttributeRequest;
+  import sailpoint.object.ProvisioningProject;
+  import sailpoint.object.TaskResult; 
+  import sailpoint.object.WorkflowCase;
+  import sailpoint.object.Workflow;
+  import sailpoint.object.WorkflowLaunch;
+  import sailpoint.object.Attributes;  
+  import sailpoint.object.Request;
+  import sailpoint.object.RequestDefinition;
+  import sailpoint.object.Application;
+  import sailpoint.object.Link;
+  import sailpoint.object.ResourceObject;
+  import sailpoint.object.Rule;
+  import sailpoint.object.Custom; 
+ 
+  import sailpoint.workflow.StandardWorkflowHandler;
+  import sailpoint.api.Provisioner;
+  import sailpoint.api.Workflower;
+  import sailpoint.api.RequestManager;
+  import sailpoint.api.IdentityService;
+  import sailpoint.api.Aggregator;
+  import sailpoint.api.EncodingUtil;
+  
+  import sailpoint.connector.Connector;
+  import sailpoint.connector.ConnectorException;  
+  
+  import sailpoint.tools.Util;
+  import sailpoint.tools.Message;
+  import sailpoint.tools.GeneralException;
+  
+  import java.util.Iterator;
+  import java.util.Date;
+  import java.util.Calendar;
+  import java.util.List;
+  import java.util.ArrayList;  
+  import org.apache.commons.logging.Log;
+  import org.apache.commons.logging.LogFactory;
+ 
+  private Log logger = LogFactory.getLog("rule.cob.pingintegration"); 
+  private static String PING_INTGERATION_CONFIG_NAME = "CoB-Custom-PingIntegrationConfig";
+  private static String OAUTH_TOKEN_INTROSPECTION_CONFIG = "Ping-OAuth-AS";
+  private static String PINGID_RESTAPI_SERVICE_CONFIG = "PingID-Cloud";
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getHttpProtocol(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("protocol");
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getHttpHost(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("host");
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getHttpPort(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("port");
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getOautTokenIntrospectionContext(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("introspectionURL");
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdSigningKey(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	String value = configAttrs.get("use_base64_key");
+  	if(null != value && EncodingUtil.isEncrypted(value)) {
+  		return context.decrypt(value);
+  	} else {
+  		return value;
+  	}
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdToken(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	String value = configAttrs.get("token");
+  	if(null != value && EncodingUtil.isEncrypted(value)) {
+  		return context.decrypt(value);
+  	} else {
+  		return value;
+  	}
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdOrgAlias(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("org_alias");
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdDeleteUserContext(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("deleteAcctURL");
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdGetUserDetailsContext(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("getUserURL");
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getOauthTokenInvalidationContext(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("inValidationURL");
+  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getOAuthClientId(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	return (String) configAttrs.get("client_id");
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public boolean isSSLValidationDisabled(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	String sslValidation = configAttrs.get("disableSSLValidation");
+  	if(Util.isNotNullOrEmpty(sslValidation) && sslValidation.equalsIgnoreCase("true")) {
+  		return true;
+  	} else {
+  		return false;
+  	}  	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getOAuthClientSecret(String configName) {
+  	Custom config = context.getObjectByName(Custom.class, PING_INTGERATION_CONFIG_NAME);
+  	if(null == config) {
+  		throw new GeneralException("Ping Integration config Custom object not found.");
+  	}
+  	
+  	Map configAttrs = config.get(configName);
+  	if(null == configAttrs) {
+  		throw new GeneralException("Could not find the config for name: " + configName);  		
+  	}
+  	
+  	String value = configAttrs.get("client_secret");
+  	if(null != value && EncodingUtil.isEncrypted(value)) {
+  		return context.decrypt(value);
+  	} else {
+  		return value;
+  	}  	
+  }
+  
+  
+  
+  public HttpClient createAcceptAnyCertificateClient() throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException {    
+    SSLContextBuilder builder = new SSLContextBuilder();
+    //Trust all certificated
+    builder.loadTrustMaterial(null, new TrustStrategy() {
+    										public boolean isTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+        										return true;
+    										}
+							 });
+    SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(builder.build());
+    // finally create the HttpClient using HttpClient factory methods and assign the ssl socket factory
+    return HttpClients.custom().setSSLSocketFactory(sslsf).build();
+  }
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public HttpClient getHttpClient(String configName) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException {
+  	HttpClient httpClient = null;
+  	if(isSSLValidationDisabled(configName)) {
+  		httpClient = createAcceptAnyCertificateClient();
+  	} else {
+  		RequestConfig globalConfig = RequestConfig.custom().setCookieSpec(CookieSpecs.IGNORE_COOKIES).build();
+  		httpClient = HttpClientBuilder.create().setDefaultRequestConfig(globalConfig).build();
+  	}
+  	return httpClient;
+  }  
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public HttpPost getHttpPostMethod(URI uri, String configName) {
+  	return new HttpPost(uri);
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public HttpClientContext getBasicAuthContext(String configName) throws GeneralException {
+  	String protocol = getHttpProtocol(configName);
+  	if(null == protocol) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Protocol specified");
+  	}
+  	
+  	String host = getHttpHost(configName);
+  	if(null == host) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Hostname specified");
+  	}
+  	
+  	String portStr = getHttpPort(configName);
+  	if(null == portStr) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Port specified");
+  	}
+  	int port = Integer.parseInt(portStr);
+  	
+  	String client_id = getOAuthClientId(configName);
+  	if(null == client_id) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". OAuth client_id unspecified");
+  	}
+  	
+  	String client_secret = getOAuthClientSecret(configName);
+  	if(null == client_secret) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". OAuth client_secret unspecified");
+  	}
+  	
+  	CredentialsProvider provider = new BasicCredentialsProvider();
+  	UsernamePasswordCredentials credentials = new UsernamePasswordCredentials(client_id, client_secret);
+  	provider.setCredentials(AuthScope.ANY, credentials);
+  	
+  	AuthCache authCache = new BasicAuthCache();
+  	HttpHost targetHost = new HttpHost(host, port, protocol);
+  	authCache.put(targetHost, new BasicScheme());
+  	
+  	HttpClientContext httpContext = HttpClientContext.create();
+  	httpContext.setCredentialsProvider(provider);
+  	httpContext.setAuthCache(authCache);
+  	
+  	return httpContext;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public URIBuilder getURIBuilder(String configName, String context) throws URISyntaxException, GeneralException {
+  	String protocol = getHttpProtocol(configName);
+  	if(null == protocol) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Protocol specified");
+  	}
+  	
+  	String host = getHttpHost(configName);
+  	if(null == host) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Hostname specified");
+  	}
+  	
+  	String port = getHttpPort(configName);
+  	if(null == port) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No HTTP Port specified");
+  	}
+  	
+  	return new URIBuilder(protocol + "://" + host + ":" + port + context);
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public HttpResponse executeHttpPostWithBasicAuth(HttpPost postRequest, String configName) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, ClientProtocolException, IOException, GeneralException {
+  	HttpClient httpClient = getHttpClient(configName);
+  	HttpClientContext context = getBasicAuthContext(configName);
+  	
+  	HttpResponse response = httpClient.execute(postRequest, context);
+  	
+  	return response;
+  }
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public HttpResponse executeHttpPostWithJwt(HttpPost postRequest, String configName) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, ClientProtocolException, IOException, GeneralException {
+  	HttpClient httpClient = getHttpClient(configName);
+  	postRequest.addHeader("Content-Type", "application/json");
+  	postRequest.addHeader("Accept", "*/*");
+  	HttpResponse response = httpClient.execute(postRequest);
+  	
+  	return response;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public URI prepareOAuthTokenIntrospectionURI(String configName, String token) throws URISyntaxException, GeneralException {
+  	String context = getOautTokenIntrospectionContext(configName);
+  	if(null == context) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No OAuth Token Introspection URL specified");
+  	}
+  	
+  	URIBuilder uriBuilder = getURIBuilder(configName, context);
+	uriBuilder.addParameter("token", token);
+	URI uri = uriBuilder.build();
+	return uri;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public URI prepareInvalidateOAuthTokenURI(String configName, String token) throws URISyntaxException, GeneralException {
+  	String context = getOauthTokenInvalidationContext(configName);
+  	if(null == context) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No OAuth Token Invalidation URL specified");
+  	}
+  	
+  	URIBuilder uriBuilder = getURIBuilder(configName, context);
+	uriBuilder.addParameter("token", token);
+	URI uri = uriBuilder.build();
+	return uri;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public URI prepareDeleteUserRestApiURI(String configName) throws URISyntaxException, GeneralException {
+  	String context = getPingIdDeleteUserContext(configName);
+  	if(null == context) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No PingID DeleteUser RESTAPI URL specified");
+  	}
+  	
+  	URIBuilder uriBuilder = getURIBuilder(configName, context);	
+	URI uri = uriBuilder.build();
+	return uri;
+  }  
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public URI prepareGetUserDetailsRestApiURI(String configName) throws URISyntaxException, GeneralException {
+  	String context = getPingIdGetUserDetailsContext(configName);
+  	if(null == context) {
+  		throw new GeneralException("Invalid configuration: " + configName + ". No PingID DeleteUser RESTAPI URL specified");
+  	}
+  	
+  	URIBuilder uriBuilder = getURIBuilder(configName, context);	
+	URI uri = uriBuilder.build();
+	return uri;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public boolean isOAuthTokenValid(String token, String identityName) {
+  	boolean success = false;
+  	HttpResponse response = null;
+  	try {
+  		if(null == token) {
+  			//log error
+  			return false;
+  		}
+  		
+  		if(null == identityName) {
+  			//log error
+  			return false;
+  		}
+  		URI uri = prepareOAuthTokenIntrospectionURI(OAUTH_TOKEN_INTROSPECTION_CONFIG, token);
+  		HttpPost postRequest = getHttpPostMethod(uri, OAUTH_TOKEN_INTROSPECTION_CONFIG);
+  		response = executeHttpPostWithBasicAuth(postRequest, OAUTH_TOKEN_INTROSPECTION_CONFIG);
+  		HttpEntity responseEntity = null;
+  		
+  		if(null != response) {
+  			int statusCode = response.getStatusLine().getStatusCode();
+  			if( statusCode != 200) {
+  				throw new GeneralException("Something went wrong during REST call. Received HTTP status: " + statusCode);
+  			}
+  			
+  			responseEntity = response.getEntity();
+  		}
+  		
+  		if(null == responseEntity) {
+  			throw new GeneralException("Something went wrong during REST call. Empty HTTP response.");
+  		} 
+  		
+  		
+  		String httpResponseStr = EntityUtils.toString(responseEntity);
+  		logger.debug("Token Validatin Response: \n" + httpResponseStr);
+  		JSONParser parser = new JSONParser();
+  		org.json.JSONObject obj = new org.json.JSONObject(httpResponseStr);
+  		logger.debug("JSON active value: " + obj.getBoolean("active"));
+  		logger.debug("JSON userID value: " + obj.getString("userID"));
+  		boolean isTokenActive = obj.getBoolean("active");
+  		String userid = obj.getString("userID");
+  		
+  		if(isTokenActive && Util.isNotNullOrEmpty(userid) && userid.equalsIgnoreCase(identityName)) {
+  			success = true;
+  		}
+  	}catch(ClientProtocolException ex) {
+	    ex.printStackTrace();	    
+	} catch(IOException ex) {
+	    ex.printStackTrace();	   
+	} catch(URISyntaxException ex) {
+		ex.printStackTrace();
+	} catch(KeyManagementException ex) {
+		ex.printStackTrace();
+	} catch(NoSuchAlgorithmException ex) {
+		ex.printStackTrace();
+	} catch(KeyStoreException ex) {
+		ex.printStackTrace();
+	} catch(GeneralException ex) {
+		ex.printStackTrace();
+	} catch(Exception ex) {
+		ex.printStackTrace();
+	} finally {
+		HttpClientUtils.closeQuietly(response);
+	}
+	return success;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public void invalidiateOAuthToken(String token) {
+  	HttpResponse response = null;
+  	try {
+  		URI uri = prepareInvalidateOAuthTokenURI(OAUTH_TOKEN_INTROSPECTION_CONFIG, token);
+  		HttpPost postRequest = getHttpPostMethod(uri, OAUTH_TOKEN_INTROSPECTION_CONFIG);
+  		response = executeHttpPostWithBasicAuth(postRequest, OAUTH_TOKEN_INTROSPECTION_CONFIG);  		
+  		
+  		if(null != response) {
+  			int statusCode = response.getStatusLine().getStatusCode();
+  			if( statusCode != 200) {
+  				throw new GeneralException("Something went wrong during REST call. Received HTTP status: " + statusCode);
+  			}	
+  		}  		
+  	}catch(ClientProtocolException ex) {
+	    ex.printStackTrace();	    
+	} catch(IOException ex) {
+	    ex.printStackTrace();	   
+	} catch(URISyntaxException ex) {
+		ex.printStackTrace();
+	} catch(KeyManagementException ex) {
+		ex.printStackTrace();
+	} catch(NoSuchAlgorithmException ex) {
+		ex.printStackTrace();
+	} catch(KeyStoreException ex) {
+		ex.printStackTrace();
+	} catch(GeneralException ex) {
+		ex.printStackTrace();
+	} catch(Exception ex) {
+		ex.printStackTrace();
+	} finally {
+		HttpClientUtils.closeQuietly(response);
+	}
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdFormatCurrentTimeStamp() {	
+	Date currentDate = new Date();
+	SimpleDateFormat PingIDDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+	PingIDDateFormat.setTimeZone(TimeZone.getTimeZone("America/Denver"));
+	
+	return PingIDDateFormat.format(currentDate);
+ }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String base64UrlEncodeString(String data) {
+    if(null != data) {
+        byte[] binaryData = data.getBytes(StandardCharsets.UTF_8);
+        return Base64.encodeBase64URLSafeString(binaryData);
+    }
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public byte[] sign(byte[] data, byte[] key, String algorithm) {
+	try {
+		Mac mac = Mac.getInstance(algorithm);
+		mac.init(new SecretKeySpec(key, algorithm));		
+		return mac.doFinal(data);	
+	}
+	catch (Exception e) {
+		e.printStackTrace();
+	}
+	return null;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject buildPingIDReqPayload(JSONObject reqHeader, JSONObject reqBody) throws JSONException {
+	JSONObject reqPayload = new JSONObject();
+	reqPayload.put("reqHeader", reqHeader);
+	reqPayload.put("reqBody", reqBody);
+	
+	return reqPayload;	
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject buildJwtReqHeaders(String configName) throws JSONException {
+	JSONObject reqHeader = new JSONObject();
+	reqHeader.put("alg", "HS256");
+	reqHeader.put("org_alias", getPingIdOrgAlias(configName));
+	reqHeader.put("token", getPingIdToken(configName));
+	return reqHeader;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject buildPingIdReqHeaders(String configName) throws JSONException {
+	JSONObject reqHeader = new JSONObject();
+	reqHeader.put("locale", "en");
+	reqHeader.put("orgAlias", getPingIdOrgAlias(configName));
+	reqHeader.put("secretKey", getPingIdToken(configName));
+	reqHeader.put("timestamp", getPingIdFormatCurrentTimeStamp());
+	reqHeader.put("version", "4.6");	
+	return reqHeader;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject buildDeleteUserOpReqBody(String username) throws JSONException {
+	JSONObject reqBody = new JSONObject();	
+	reqBody.put("userName", username);
+	reqBody.put("clientData", "xxxx-yyyy");
+	return reqBody;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject buildGetUserDetailsReqBody(String username) throws JSONException {
+	JSONObject reqBody = new JSONObject();
+	reqBody.put("getSameDeviceUsers", false);	
+	reqBody.put("userName", username);
+	reqBody.put("clientData", "xxxx-yyyy");
+	return reqBody;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String buildPingIdReqestToken(String username, String operation, String configName) throws JSONException {
+	String signingKey = getPingIdSigningKey(configName);
+	JSONObject jwtHeaders = buildJwtReqHeaders(configName);	
+	JSONObject reqHeaders = buildPingIdReqHeaders(configName);
+	JSONObject reqBody = null;
+	switch(operation) {
+		case "DeleteUser":
+			reqBody = buildDeleteUserOpReqBody(username);			
+			break;
+		case "GetUserDetails":
+			reqBody = buildGetUserDetailsReqBody(username);
+			break;
+		default:
+			throw new GeneralException("Could not find a matching PingId Operation.");
+	}
+	JSONObject reqPayload = buildPingIDReqPayload(reqHeaders, reqBody);
+	String jwtHeaderB64 = base64UrlEncodeString(jwtHeaders.toString());
+	String reqPayloadB64 = base64UrlEncodeString(reqPayload.toString());
+	
+	String signingData = jwtHeaderB64 + "." + reqPayloadB64;
+	byte[] signature = sign(signingData.getBytes(StandardCharsets.UTF_8), Base64.decodeBase64(signingKey), "HmacSHA256");
+	
+	String signatureB64 =  Base64.encodeBase64URLSafeString(signature);
+	
+	return signingData + "." + signatureB64;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public boolean validateSignature(String response, String configName) {
+	boolean result = false;
+	if(Util.isNotNullOrEmpty(response)) {
+		String signatureB64String = "";
+		String jwtHeaderB64String = "";
+		String jwtPayloadB64String = "";
+		String signingKey = getPingIdSigningKey(configName);
+		String[] respTokens = response.split("\\.");
+		if(null != respTokens && respTokens.length == 3) {
+			jwtHeaderB64String = respTokens[0];
+			jwtPayloadB64String = respTokens[1];
+			signatureB64String = respTokens[2];
+			String data = jwtHeaderB64String + "." + jwtPayloadB64String;
+			byte[] signedData = sign(data.getBytes(StandardCharsets.UTF_8), Base64.decodeBase64(signingKey), "HmacSHA256");
+			String signedDataB64 = Base64.encodeBase64URLSafeString(signedData);
+			if(signedDataB64.equals(signatureB64String)) {
+				result = true;
+			}
+		}		
+	}
+	return result;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public JSONObject parsePingIdResponse(String response) {
+	JSONObject reqBody = null;	
+	if(Util.isNotNullOrEmpty(response)) {		
+		String[] respTokens = response.split("\\.");
+		if(null != respTokens && respTokens.length == 3) {
+			String jwtPayload = respTokens[1];
+			Base64 urlSafeDecoder = new Base64(true);
+			String jsonStr = new String(urlSafeDecoder.decode(jwtPayload.getBytes(StandardCharsets.UTF_8)));
+			JSONParser parser = new JSONParser();
+			reqBody = parser.parse(jsonStr);
+		}
+	}
+	
+	return reqBody;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public boolean deletePingIDAccount(String username) {
+  	boolean success = false;
+  	HttpResponse response = null;
+  	try {
+  		if(Util.isNullOrEmpty(username)) {
+  			//log error
+  			return false;
+  		}  		
+  		
+  		URI uri = prepareDeleteUserRestApiURI(PINGID_RESTAPI_SERVICE_CONFIG);
+  		HttpPost postRequest = getHttpPostMethod(uri, PINGID_RESTAPI_SERVICE_CONFIG);
+  		String jwtToken = buildPingIdReqestToken(username, "DeleteUser", PINGID_RESTAPI_SERVICE_CONFIG);
+  		StringEntity input = new StringEntity(jwtToken);
+  		input.setContentType("application/json");
+  		postRequest.setEntity(input);
+  		response = executeHttpPostWithJwt(postRequest, PINGID_RESTAPI_SERVICE_CONFIG);
+  		HttpEntity responseEntity = null;
+  		
+  		if(null != response) {
+  			int statusCode = response.getStatusLine().getStatusCode();
+  			if( statusCode != 200) {
+  				throw new GeneralException("Something went wrong during REST call. Received HTTP status: " + statusCode);
+  			}
+  			
+  			responseEntity = response.getEntity();
+  		}
+  		
+  		if(null == responseEntity) {
+  			throw new GeneralException("Something went wrong during REST call. null HTTP response.");
+  		} 
+  		
+  		
+  		String httpResponseStr = EntityUtils.toString(responseEntity);
+  		boolean isSignatureValid = validateSignature(httpResponseStr, PINGID_RESTAPI_SERVICE_CONFIG);
+  		JSONObject responseBody = parsePingIdResponse(httpResponseStr);
+  		long apiRespCode = 0;
+  		if(null != responseBody && responseBody.containsKey("responseBody")) {
+  			responseBody = responseBody.get("responseBody");
+  			apiRespCode = responseBody.get("errorId");
+  		} else {
+  			//throw new general exception
+  		}  		
+  		
+  		if(isSignatureValid && apiRespCode == 200) {
+  			success = true;
+  		} else if(!isSignatureValid) {
+  			//log error invalid signature
+  			//throw general exception
+  		} else if(apiRespCode != 200) {
+  			String errorMsg = responseBody.get("errorMsg");
+  			//log error with error code and message
+  			//throw general exception with error code and message
+  		}
+  	}catch(ClientProtocolException ex) {
+	    ex.printStackTrace();	    
+	} catch(IOException ex) {
+	    ex.printStackTrace();	   
+	} catch(URISyntaxException ex) {
+		ex.printStackTrace();
+	} catch(KeyManagementException ex) {
+		ex.printStackTrace();
+	} catch(NoSuchAlgorithmException ex) {
+		ex.printStackTrace();
+	} catch(KeyStoreException ex) {
+		ex.printStackTrace();
+	} catch(GeneralException ex) {
+		//throw this exception back to workflow
+		ex.printStackTrace();
+	} catch(Exception ex) {
+		ex.printStackTrace();
+	} finally {
+		HttpClientUtils.closeQuietly(response);
+	}
+	return success;
+  }
+  
+  
+  
+  /****************************************************************************************************************
+  Method Name:   
+  Description: 
+  ****************************************************************************************************************/
+  public String getPingIdAcctDetails(String username) {
+	String accountDetails = "";
+  	boolean success = false;
+  	HttpResponse response = null;
+  	try {
+  		if(Util.isNullOrEmpty(username)) {
+  			//log error
+  			return "ERROR!";
+  		}  		
+  		
+  		URI uri = prepareGetUserDetailsRestApiURI(PINGID_RESTAPI_SERVICE_CONFIG);
+  		HttpPost postRequest = getHttpPostMethod(uri, PINGID_RESTAPI_SERVICE_CONFIG);
+  		String jwtToken = buildPingIdReqestToken(username, "GetUserDetails", PINGID_RESTAPI_SERVICE_CONFIG);
+  		StringEntity input = new StringEntity(jwtToken);
+  		input.setContentType("application/json");
+  		postRequest.setEntity(input);
+  		response = executeHttpPostWithJwt(postRequest, PINGID_RESTAPI_SERVICE_CONFIG);
+  		HttpEntity responseEntity = null;
+  		
+  		if(null != response) {
+  			int statusCode = response.getStatusLine().getStatusCode();
+  			if( statusCode != 200) {
+  				throw new GeneralException("Something went wrong during REST call. Received HTTP status: " + statusCode);
+  			}
+  			
+  			responseEntity = response.getEntity();
+  		}
+  		
+  		if(null == responseEntity) {
+  			throw new GeneralException("Something went wrong during REST call. null HTTP response.");
+  		} 
+  		
+  		
+  		String httpResponseStr = EntityUtils.toString(responseEntity);
+  		boolean isSignatureValid = validateSignature(httpResponseStr, PINGID_RESTAPI_SERVICE_CONFIG);
+  		JSONObject responseBody = parsePingIdResponse(httpResponseStr);
+  		long apiRespCode = 0;
+  		if(null != responseBody && responseBody.containsKey("responseBody")) {
+  			responseBody = responseBody.get("responseBody");
+  			apiRespCode = responseBody.get("errorId");
+  		} else {
+  			//throw new general exception
+  		}  		
+  		
+  		if(isSignatureValid && apiRespCode == 200) {
+  			accountDetails = responseBody.toString();
+  		} else if(!isSignatureValid) {
+  			//log error invalid signature
+  			//throw general exception
+  		} else if(apiRespCode != 200) {
+  			String errorMsg = responseBody.get("errorMsg");
+  			//log error with error code and message
+  			//throw general exception with error code and message
+  		}
+  	}catch(ClientProtocolException ex) {
+	    ex.printStackTrace();	    
+	} catch(IOException ex) {
+	    ex.printStackTrace();	   
+	} catch(URISyntaxException ex) {
+		ex.printStackTrace();
+	} catch(KeyManagementException ex) {
+		ex.printStackTrace();
+	} catch(NoSuchAlgorithmException ex) {
+		ex.printStackTrace();
+	} catch(KeyStoreException ex) {
+		ex.printStackTrace();
+	} catch(GeneralException ex) {
+		//throw this exception back to workflow
+		ex.printStackTrace();
+	} catch(Exception ex) {
+		ex.printStackTrace();
+	} finally {
+		HttpClientUtils.closeQuietly(response);
+	}
+	return accountDetails;
+  }
+  ]]></Source></Rule>
